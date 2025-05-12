@@ -1,4 +1,4 @@
-# Vana Data Refinement Template
+# vChars Data Refinement 
 
 This repository serves as a template for creating Dockerized *data refinement instructions* that transform raw user data into normalized (and potentially anonymized) SQLite-compatible databases, so data in Vana can be querying by Vana's Query Engine.
 
