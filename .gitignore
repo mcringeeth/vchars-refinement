@@ -3,7 +3,7 @@
 __pycache__/
 *.pyc
 
-/input/user.json
+/input/*
 /output/*
 !/output/.gitkeep
 .env

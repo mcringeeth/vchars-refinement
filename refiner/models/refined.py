@@ -1,41 +1,81 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Column, String, Integer, Text, DateTime, ForeignKey, JSON, UniqueConstraint
+)
+from sqlalchemy.orm import declarative_base, relationship
 
-# Base model for SQLAlchemy
 Base = declarative_base()
 
-# Define database models - the schema is generated using these
-class UserRefined(Base):
-    __tablename__ = 'users'
-    
-    user_id = Column(String, primary_key=True)
-    email = Column(String, nullable=False, unique=True)
-    name = Column(String, nullable=False)
-    locale = Column(String, nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    
-    storage_metrics = relationship("StorageMetric", back_populates="user")
-    auth_sources = relationship("AuthSource", back_populates="user")
+# ---------- 1. Pseudonymised users ----------
+class UserPseudo(Base):
+    __tablename__ = "users"
 
-class StorageMetric(Base):
-    __tablename__ = 'storage_metrics'
-    
-    metric_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, ForeignKey('users.user_id'), nullable=False)
-    percent_used = Column(Float, nullable=False)
-    recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    
-    user = relationship("UserRefined", back_populates="storage_metrics")
+    pseudo_id = Column(String(64), primary_key=True)  # salted SHA-256 hash
 
-class AuthSource(Base):
-    __tablename__ = 'auth_sources'
-    
-    auth_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, ForeignKey('users.user_id'), nullable=False)
-    source = Column(String, nullable=False)
-    collection_date = Column(DateTime, nullable=False)
-    data_type = Column(String, nullable=False)
-    
-    user = relationship("UserRefined", back_populates="auth_sources")
+    messages = relationship("Message", back_populates="author")
+
+# ---------- 2. Chats ----------
+class Chat(Base):
+    __tablename__ = "chats"
+
+    chat_id         = Column(Integer, primary_key=True, autoincrement=True)
+    tg_chat_id      = Column(Integer, nullable=False, index=True) 
+    name            = Column(Text, nullable=True)
+    character_slug  = Column(String, nullable=True)
+    character_level = Column(Integer, nullable=True)
+    uploader_id     = Column(String(64), nullable=True)  # hashed uploader ID
+    created_at      = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    messages = relationship("Message", back_populates="chat")
+
+# ---------- 3. Messages ----------
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_id", name="uq_chat_message"),
+    )
+
+    message_rowid   = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id         = Column(Integer, ForeignKey("chats.chat_id"), nullable=False)
+    message_id      = Column(Integer, nullable=False)  # original TG message ID
+    type            = Column(String, nullable=False)
+    date_iso        = Column(String, nullable=False)   # ISO 8601 timestamp
+    date_unixtime   = Column(Integer, nullable=True)
+    reply_to_id     = Column(Integer, nullable=True)
+    media_type      = Column(String, nullable=True)
+    mime_type       = Column(String, nullable=True)
+    duration_s      = Column(Integer, nullable=True)
+
+    from_pseudo_id  = Column(String(64), ForeignKey("users.pseudo_id"), nullable=True)
+
+    text_raw        = Column(Text, nullable=True)      # PII-scrubbed text
+    content_json    = Column(JSON, nullable=True)      # media & weird edge fields
+
+    chat    = relationship("Chat", back_populates="messages")
+    author  = relationship("UserPseudo", back_populates="messages")
+    entities = relationship("MessageEntity", back_populates="message",
+                            cascade="all, delete-orphan")
+    reactions = relationship("Reaction", back_populates="message",
+                             cascade="all, delete-orphan")
+
+# ---------- 4. Message entities ----------
+class MessageEntity(Base):
+    __tablename__ = "message_entities"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    message_id   = Column(Integer, ForeignKey("messages.message_rowid"), nullable=False)
+    entity_type  = Column(String, nullable=False)
+    entity_text  = Column(Text, nullable=False)
+
+    message = relationship("Message", back_populates="entities")
+
+# ---------- 5. Reactions ----------
+class Reaction(Base):
+    __tablename__ = "reactions"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    message_id  = Column(Integer, ForeignKey("messages.message_rowid"), nullable=False)
+    emoji       = Column(String, nullable=False)
+    count       = Column(Integer, nullable=False)
+
+    message = relationship("Message", back_populates="reactions")

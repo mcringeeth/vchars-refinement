@@ -72,11 +72,9 @@ python -m refiner
 # Or with Docker
 docker build -t refiner .
 docker run \
-  --rm \
-  --volume $(pwd)/input:/input \
-  --volume $(pwd)/output:/output \
-  --env PINATA_API_KEY=your_key \
-  --env PINATA_API_SECRET=your_secret \
+  -v "$(pwd)/input:/input" \
+  -v "$(pwd)/output:/output" \
+  --env-file .env \
   refiner
 ```
 

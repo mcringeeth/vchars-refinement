@@ -19,9 +19,14 @@ class Settings(BaseSettings):
         default=None,
         description="Key to symmetrically encrypt the refinement. This is derived from the original file encryption key"
     )
-    
+
+    HASH_SALT: str = Field(
+        default=None,
+        description="Hash salt for the PII data"
+    )
+
     SCHEMA_NAME: str = Field(
-        default="Google Drive Analytics",
+        default="vChars Chats",
         description="Name of the schema"
     )
     
@@ -31,7 +36,7 @@ class Settings(BaseSettings):
     )
     
     SCHEMA_DESCRIPTION: str = Field(
-        default="Schema for the Google Drive DLP, representing some basic analytics of the Google user",
+        default="Schema for Telegram and AI chats from vChars DataDAO",
         description="Description of the schema"
     )
     
