@@ -3,23 +3,7 @@ from pgpy.constants import CompressionAlgorithm, HashAlgorithm
 import os
 from refiner.config import settings
 import hashlib
-import re
 from typing import Any
-
-
-EMAIL_RE   = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
-PHONE_RE   = re.compile(r"\b\+?\d[\d\- ]{7,}\d\b")
-URL_RE     = re.compile(r"https?://\S+")
-
-
-def scrub_text(text: str) -> str:
-    """
-    Cheap PII scrubber: redact e-mails, phone numbers, URLs.
-    """
-    text = EMAIL_RE.sub("[EMAIL]", text)
-    text = PHONE_RE.sub("[PHONE]", text)
-    text = URL_RE.sub("[URL]", text)
-    return text
 
 
 def hash_id(value: Any, salt: str) -> str:

@@ -1,5 +1,10 @@
+pydantic==1.10.15
+python-dotenv
+sqlalchemy==2.0.31
 pgpy
-pydantic
-pydantic_settings
+spacy==3.5.0
 requests
-sqlalchemy
+langdetect==1.0.9
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
+xx_ent_wiki_sm @ https://github.com/explosion/spacy-models/releases/download/xx_ent_wiki_sm-3.5.0/xx_ent_wiki_sm-3.5.0-py3-none-any.whl
+ru_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.5.0/ru_core_news_sm-3.5.0-py3-none-any.whl

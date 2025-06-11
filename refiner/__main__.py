@@ -24,7 +24,7 @@ def run() -> None:
     
     output_path = os.path.join(settings.OUTPUT_DIR, "output.json")
     with open(output_path, 'w') as f:
-        json.dump(output.model_dump(), f, indent=2)    
+        json.dump(output.dict(), f, indent=2)    
     logging.info(f"Data transformation complete: {output}")
 
 

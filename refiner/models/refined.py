@@ -12,7 +12,16 @@ class UserPseudo(Base):
 
     pseudo_id = Column(String(64), primary_key=True)  # salted SHA-256 hash
 
-    messages = relationship("Message", back_populates="author")
+    messages = relationship(
+        "Message",
+        foreign_keys="[Message.from_pseudo_id]",
+        back_populates="author"
+    )
+    forwarded_messages = relationship(
+        "Message",
+        foreign_keys="[Message.forwarded_from_pseudo_id]",
+        back_populates="forwarded_from_author"
+    )
 
 # ---------- 2. Chats ----------
 class Chat(Base):
@@ -41,18 +50,29 @@ class Message(Base):
     type            = Column(String, nullable=False)
     date_iso        = Column(String, nullable=False)   # ISO 8601 timestamp
     date_unixtime   = Column(Integer, nullable=True)
+    edited_at_iso   = Column(String, nullable=True)    # ISO 8601 timestamp
     reply_to_id     = Column(Integer, nullable=True)
     media_type      = Column(String, nullable=True)
     mime_type       = Column(String, nullable=True)
     duration_s      = Column(Integer, nullable=True)
 
     from_pseudo_id  = Column(String(64), ForeignKey("users.pseudo_id"), nullable=True)
+    forwarded_from_pseudo_id = Column(String(64), ForeignKey("users.pseudo_id"), nullable=True)
 
     text_raw        = Column(Text, nullable=True)      # PII-scrubbed text
     content_json    = Column(JSON, nullable=True)      # media & weird edge fields
 
     chat    = relationship("Chat", back_populates="messages")
-    author  = relationship("UserPseudo", back_populates="messages")
+    author  = relationship(
+        "UserPseudo",
+        foreign_keys=[from_pseudo_id],
+        back_populates="messages"
+    )
+    forwarded_from_author = relationship(
+        "UserPseudo",
+        foreign_keys=[forwarded_from_pseudo_id],
+        back_populates="forwarded_messages"
+    )
     entities = relationship("MessageEntity", back_populates="message",
                             cascade="all, delete-orphan")
     reactions = relationship("Reaction", back_populates="message",

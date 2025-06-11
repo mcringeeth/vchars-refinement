@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
+import logging
 
 from refiner.transformer.base_transformer import DataTransformer
 from refiner.config import settings
@@ -14,7 +15,9 @@ from refiner.models.refined import (
 from refiner.models.unrefined import Chat as RawChat    
 from refiner.utils.date import _iso
 from refiner.utils.other import _to_int
-from refiner.utils.encrypt import hash_id, scrub_text
+from refiner.utils.encrypt import hash_id
+from refiner.utils.pii import scrub_text_advanced
+from pydantic import ValidationError
 
 
 class TelegramChatTransformer(DataTransformer):
@@ -28,28 +31,29 @@ class TelegramChatTransformer(DataTransformer):
 
     # ------------- public API ------------------------------------------------
 
-    def transform(self, data: Dict[str, Any]) -> List[Base]:
+    def transform(self, data: Dict[str, Any], session: Session) -> None:
         """
         Args:
             data: raw JSON of ONE Telegram chat (dict)
         Returns:
             list of SQLAlchemy model instances ready to add()
         """
-        raw_chat: RawChat = RawChat.model_validate(data)
-
-        session: Session = self.Session()        # temp session for de-dup
-        models: List[Base] = []
+        # --- Parse and Validate ---
+        try:
+            raw_chat: RawChat = RawChat.parse_obj(data)
+        except ValidationError as e:
+            logging.error(f"Failed to parse chat data: {e}")
+            raise
 
         # --- 1. Chat ---------------------------------------------------------
         chat_row = Chat(
             tg_chat_id      = raw_chat.id,
-            name            = raw_chat.name,
+            name            = hash_id(raw_chat.name, settings.HASH_SALT),
             character_slug  = raw_chat.character_slug,
             character_level = raw_chat.character_level,
             uploader_id     = hash_id(raw_chat.uploader_tg_id, settings.HASH_SALT),
             # created_at auto-fills
         )
-        models.append(chat_row)
         session.add(chat_row)
         session.flush()          # get chat_row.chat_id
 
@@ -64,21 +68,34 @@ class TelegramChatTransformer(DataTransformer):
                 session.merge(UserPseudo(pseudo_id=from_hash))
                 user_cache.add(from_hash)
 
+            # Forwarded-from hash
+            forwarded_from_hash = None
+            if m.forwarded_from:
+                forwarded_from_hash = hash_id(m.forwarded_from, settings.HASH_SALT)
+                if forwarded_from_hash and forwarded_from_hash not in user_cache:
+                    session.merge(UserPseudo(pseudo_id=forwarded_from_hash))
+                    user_cache.add(forwarded_from_hash)
+
             # Scrub message text
             if isinstance(m.text, str):
-                text_out = scrub_text(m.text)
+                text_out = scrub_text_advanced(m.text)
             else:
-                text_out = scrub_text(" ".join(t.text for t in m.text))
+                text_parts = []
+                if m.text:
+                    for t in m.text:
+                        if isinstance(t, str):
+                            text_parts.append(t)
+                        elif hasattr(t, 'text'):
+                            text_parts.append(t.text)
+                text_out = scrub_text_advanced("".join(text_parts))
 
-            # Keep “junk drawer” JSON for media etc.
+            # Keep "junk drawer" JSON for media etc.
             content = {
-                k: v for k, v in m.model_dump().items()
-                if k not in {
-                    "id", "type", "date", "date_unixtime", "from_id", "from",
-                    "text", "text_entities", "reactions", "reply_to_message_id",
-                    "media_type", "mime_type", "duration_seconds"
-                } and v is not None
+                k: v for k, v in m.dict().items()
+                if k not in ["text", "text_entities", "id"]
             }
+            # Remove file name from content if it exists
+            content.pop("file_name", None)
 
             msg_row = Message(
                 chat_id        = chat_row.chat_id,
@@ -86,15 +103,16 @@ class TelegramChatTransformer(DataTransformer):
                 type           = m.type,
                 date_iso       = _iso(m.date),
                 date_unixtime  = _to_int(m.date_unixtime),
+                edited_at_iso  = _iso(m.edited),
                 reply_to_id    = m.reply_to_message_id,
                 media_type     = m.media_type,
                 mime_type      = m.mime_type,
                 duration_s     = m.duration_seconds,
                 from_pseudo_id = from_hash,
+                forwarded_from_pseudo_id = forwarded_from_hash,
                 text_raw       = text_out,
                 content_json   = content or None,
             )
-            models.append(msg_row)
             session.add(msg_row)
             session.flush()      # need message_rowid for children
 
@@ -103,9 +121,8 @@ class TelegramChatTransformer(DataTransformer):
                 ent = MessageEntity(
                     message_id  = msg_row.message_rowid,
                     entity_type = te.type,
-                    entity_text = scrub_text(te.text),
+                    entity_text = scrub_text_advanced(te.text),
                 )
-                models.append(ent)
                 session.add(ent)
 
             # ---- reactions (ignore recent list for privacy) ----------------
@@ -115,10 +132,7 @@ class TelegramChatTransformer(DataTransformer):
                     emoji      = rx.emoji,
                     count      = rx.count,
                 )
-                models.append(react)
                 session.add(react)
 
-        # Flush but don’t commit; caller’s process() will handle commit/rollback
+        # Flush but don't commit; caller's process() will handle commit/rollback
         session.flush()
-        session.close()
-        return models

@@ -1,12 +1,13 @@
-from typing import Dict, Any, List
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from refiner.models.refined import Base
 import sqlite3
 import os
 import logging
 
-class DataTransformer:
+class DataTransformer(ABC):
     """
     Base class for transforming JSON data into SQLAlchemy models.
     Users should extend this class and override the transform method
@@ -16,29 +17,41 @@ class DataTransformer:
     def __init__(self, db_path: str):
         """Initialize the transformer with a database path."""
         self.db_path = db_path
-        self._initialize_database()
     
-    def _initialize_database(self) -> None:
+    def process(self, data: Dict[str, Any], session: Optional[Session] = None) -> None:
         """
-        Initialize or recreate the database and its tables.
+        Processes the raw data and stores it in the database.
+        Manages the DB session and transaction.
+        If an external session is provided, it will be used directly.
         """
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
-            logging.info(f"Deleted existing database at {self.db_path}")
-        
-        self.engine = create_engine(f'sqlite:///{self.db_path}')
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+        manage_session = session is None
+
+        if manage_session:
+            if self.db_path == ":memory:":
+                engine = create_engine("sqlite:///:memory:")
+            else:
+                engine = create_engine(f"sqlite:///{self.db_path}")
+
+            Base.metadata.create_all(engine)
+            Session = sessionmaker(bind=engine)
+            session = Session()
+
+        try:
+            self.transform(data, session)
+            if manage_session:
+                session.commit()
+        except Exception as e:
+            if manage_session:
+                session.rollback()
+            raise e
+        finally:
+            if manage_session:
+                session.close()
     
-    def transform(self, data: Dict[str, Any]) -> List[Base]:
+    @abstractmethod
+    def transform(self, data: Dict[str, Any], session: Session) -> None:
         """
-        Transform JSON data into SQLAlchemy model instances.
-        
-        Args:
-            data: Dictionary containing the JSON data
-            
-        Returns:
-            List of SQLAlchemy model instances to be saved to the database
+        The core transformation logic to be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement transform method")
     
@@ -53,24 +66,3 @@ class DataTransformer:
         
         conn.close()
         return "\n\n".join(schema)
-
-    def process(self, data: Dict[str, Any]) -> None:
-        """
-        Process the data transformation and save to database.
-        If the database already exists, it will be deleted and recreated.
-        
-        Args:
-            data: Dictionary containing the JSON data
-        """
-        session = self.Session()
-        try:
-            # Transform data into model instances
-            models = self.transform(data)
-            for model in models:
-                session.add(model)
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            raise e
-        finally:
-            session.close()

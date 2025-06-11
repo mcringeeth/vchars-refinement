@@ -7,17 +7,9 @@ class TextEntity(BaseModel):
     text: str
 
 
-class ReactionRecent(BaseModel):
-    from_: str = Field(..., alias="from")
-    from_id: str
-    date: str
-
-
 class Reaction(BaseModel):
-    type: str
     count: int
     emoji: str
-    recent: List[ReactionRecent]
 
 
 class Message(BaseModel):
@@ -25,9 +17,9 @@ class Message(BaseModel):
     type: str
     date: str
     date_unixtime: Optional[str] = None
-    from_: str = Field(..., alias="from")
+    from_: Optional[str] = Field(None, alias="from")
     from_id: Optional[str] = None
-    text: Union[str, List[TextEntity]]
+    text: Union[str, List[Union[TextEntity, str]]]
     text_entities: Optional[List[TextEntity]] = None
     edited: Optional[str] = None
     edited_unixtime: Optional[str] = None

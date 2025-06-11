@@ -36,15 +36,15 @@ class Refiner:
                         version=settings.SCHEMA_VERSION,
                         description=settings.SCHEMA_DESCRIPTION,
                         dialect=settings.SCHEMA_DIALECT,
-                        schema=transformer.get_schema()
+                        schema_data=transformer.get_schema()
                     )
-                    output.schema = schema
+                    output.offchain_schema = schema
                         
                     # Upload the schema to IPFS
                     schema_file = os.path.join(settings.OUTPUT_DIR, 'schema.json')
                     with open(schema_file, 'w') as f:
-                        json.dump(schema.model_dump(), f, indent=4)
-                        schema_ipfs_hash = upload_json_to_ipfs(schema.model_dump())
+                        json.dump(schema.dict(by_alias=True), f, indent=4)
+                        schema_ipfs_hash = upload_json_to_ipfs(schema.dict(by_alias=True))
                     
                     # Encrypt and upload the database to IPFS
                     encrypted_path = encrypt_file(settings.REFINEMENT_ENCRYPTION_KEY, self.db_path)
